@@ -11,3 +11,6 @@ class Event(models.Model):
     description = models.TextField(
         help_text='A description of the event.'
     )
+
+    def __str__(self):
+        return self.date.strftime('%Y-%-m-%-d')
