@@ -12,5 +12,8 @@ class Event(models.Model):
         help_text='A description of the event.'
     )
 
+    class Meta(object):  # pylint: disable=missing-docstring
+        ordering = ['date']
+
     def __str__(self):
         return self.date.strftime('%Y-%-m-%-d')
