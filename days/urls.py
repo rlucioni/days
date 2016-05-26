@@ -1,3 +1,4 @@
+"""Top-level URL configuration."""
 from django.conf.urls import url
 from django.contrib import admin
 

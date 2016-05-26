@@ -1,3 +1,4 @@
+"""Models for the days app."""
 from django.db import models
 
 

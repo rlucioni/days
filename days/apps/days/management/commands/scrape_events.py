@@ -1,8 +1,8 @@
+"""Management command for scraping historical events from Wikipedia."""
 import datetime
 import logging
 
 from bs4 import BeautifulSoup
-from django.conf import settings
 from django.core.management.base import BaseCommand
 from django.db import transaction
 from django.utils import timezone
@@ -15,10 +15,12 @@ logger = logging.getLogger(__name__)
 
 
 class ForcedRollback(Exception):
+    """Raised when intentionally rolling back a transaction."""
     pass
 
 
 class Command(BaseCommand):
+    """Management command for scraping historical events from Wikipedia."""
     help = 'Scrape historical events from Wikipedia.'
     url = 'https://en.wikipedia.org/wiki'
 
@@ -51,15 +53,7 @@ class Command(BaseCommand):
         else:
             target = timezone.now().date()
 
-        url = '{base_url}/{month_day}'.format(
-            base_url=self.url,
-            month_day=target.strftime('%B_%-d')
-        )
-
-        response = requests.get(url)
-        soup = BeautifulSoup(response.text, 'html.parser')
-        uls = soup.find_all('ul')
-        events = uls[1]
+        events = self._scrape(target)
 
         try:
             with transaction.atomic():
@@ -74,7 +68,7 @@ class Command(BaseCommand):
                             continue
 
                         date = datetime.date(int(year), target.month, target.day)
-                        Event.objects.create(date=date, description=description)
+                        Event.objects.create(date=date, description=description)  # pylint: disable=no-member
 
                         count += 1
 
@@ -86,3 +80,17 @@ class Command(BaseCommand):
                     )
         except ForcedRollback as e:
             logger.info(e)
+
+    def _scrape(self, target):
+        url = '{base_url}/{month_day}'.format(
+            base_url=self.url,
+            month_day=target.strftime('%B_%-d')
+        )
+
+        response = requests.get(url)
+        soup = BeautifulSoup(response.text, 'html.parser')
+
+        uls = soup.find_all('ul')
+        events = uls[1]
+
+        return events
