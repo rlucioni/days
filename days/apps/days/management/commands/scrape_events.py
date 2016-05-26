@@ -74,7 +74,9 @@ class Command(BaseCommand):
 
                 logger.info('Scraped %d events', count)
 
-                if not commit:
+                if commit:
+                    logger.info('Saved %d new events', count)
+                else:
                     raise ForcedRollback(
                         'No data has been saved. To save data, pass the -c or --commit flags.'
                     )
