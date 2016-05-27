@@ -1,13 +1,13 @@
 """Management command for scraping historical events from Wikipedia."""
+import calendar
 from concurrent.futures import as_completed, ThreadPoolExecutor
 import datetime
 import logging
 
 from bs4 import BeautifulSoup
-from django.core.management.base import BaseCommand
+from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 from django.utils import timezone
-from tqdm import tqdm
 import requests
 
 from days.apps.days.models import Event
@@ -25,6 +25,7 @@ class Command(BaseCommand):
     """Management command for scraping historical events from Wikipedia."""
     help = 'Scrape historical events from Wikipedia.'
     url = 'https://en.wikipedia.org/wiki'
+    leap_year = 2016
 
     def add_arguments(self, parser):
         parser.add_argument(
@@ -33,8 +34,7 @@ class Command(BaseCommand):
             dest='target',
             default=None,
             help=(
-                'Month and day for which to scrape events, specified as a %%m-%%d formatted string. '
-                'Defaults to the current date (UTC).'
+                'Specific month and day for which to scrape events, specified as a %%m-%%d formatted string.'
             )
         )
 
@@ -53,34 +53,57 @@ class Command(BaseCommand):
         if target:
             targets = [datetime.datetime.strptime(target, '%m-%d').date()]
         else:
-            targets = [timezone.now().date()]
+            if not calendar.isleap(self.leap_year):
+                raise CommandError(
+                    '{year} is not a leap year. '
+                    'To guarantee that events for all possible days of a year are scraped, '
+                    'the "leap_year" class variable must be set to a leap year.'.format(year=self.leap_year)
+                )
+
+            day_counts = [calendar.monthrange(self.leap_year, month)[1] for month in range(1, 13)]
+
+            targets = []
+            for month, day_count in enumerate(day_counts, start=1):
+                for day in range(1, day_count + 1):
+                    targets.append(
+                        datetime.date(self.leap_year, month, day)
+                    )
 
         with ThreadPoolExecutor() as executor:
             futures = [executor.submit(self._scrape, t) for t in targets]
 
-        tqdm_kwargs = {
-            'total': len(futures),
-            'unit': 'pages',
-            'unit_scale': True,
-            'leave': True
-        }
-
         try:
             with transaction.atomic():
                 count = 0
-                for future in tqdm(as_completed(futures), **tqdm_kwargs):
+                for future in as_completed(futures):
                     target, events = future.result()
+
+                    logger.info('Processing events for %s', target.strftime('%B %-d'))
 
                     for event in events.children:
                         if event != '\n':
-                            year, description = event.text.split(' – ', 1)
+                            try:
+                                year, description = event.text.split(' – ', 1)
+                            except ValueError:
+                                logger.warning('Found a malformed entry: [%s]. Ignoring event.', event.text)
+                                continue
 
                             if any(c.isalpha() for c in year):
                                 # TODO: Figure out how to handle BC years. DateField and BooleanField combo?
-                                logger.debug('Found a year containing letters: [%s]. Ignoring event.', year)
+                                logger.warning('Found a year containing letters: [%s]. Ignoring event.', year)
                                 continue
 
-                            date = datetime.date(int(year), target.month, target.day)
+                            try:
+                                date = datetime.date(int(year), target.month, target.day)
+                            except ValueError:
+                                logger.warning(
+                                    'Unable to create date object for year [%s], month [%s], day [%s]. Ignoring event.',
+                                    year,
+                                    target.month,
+                                    target.day
+                                )
+                                continue
+
                             Event.objects.create(date=date, description=description)  # pylint: disable=no-member
 
                             count += 1
@@ -106,6 +129,7 @@ class Command(BaseCommand):
         soup = BeautifulSoup(response.text, 'html.parser')
 
         uls = soup.find_all('ul')
+        # TODO: February 29 has a slightly different structure. May need to grab third set of uls.
         events = uls[1]
 
         return target, events
