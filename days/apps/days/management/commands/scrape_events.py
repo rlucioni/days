@@ -1,4 +1,5 @@
 """Management command for scraping historical events from Wikipedia."""
+from concurrent.futures import as_completed, ThreadPoolExecutor
 import datetime
 import logging
 
@@ -6,6 +7,7 @@ from bs4 import BeautifulSoup
 from django.core.management.base import BaseCommand
 from django.db import transaction
 from django.utils import timezone
+from tqdm import tqdm
 import requests
 
 from days.apps.days.models import Event
@@ -49,28 +51,39 @@ class Command(BaseCommand):
         commit = options.get('commit')
 
         if target:
-            target = datetime.datetime.strptime(target, '%m-%d').date()
+            targets = [datetime.datetime.strptime(target, '%m-%d').date()]
         else:
-            target = timezone.now().date()
+            targets = [timezone.now().date()]
 
-        events = self._scrape(target)
+        with ThreadPoolExecutor() as executor:
+            futures = [executor.submit(self._scrape, t) for t in targets]
+
+        tqdm_kwargs = {
+            'total': len(futures),
+            'unit': 'pages',
+            'unit_scale': True,
+            'leave': True
+        }
 
         try:
             with transaction.atomic():
                 count = 0
-                for event in events.children:
-                    if event != '\n':
-                        year, description = event.text.split(' – ')
+                for future in tqdm(as_completed(futures), **tqdm_kwargs):
+                    target, events = future.result()
 
-                        if any(c.isalpha() for c in year):
-                            # TODO: Figure out how to handle BC years. DateField and BooleanField combo?
-                            logger.debug('Found a year containing letters: [%s]. Ignoring event.', year)
-                            continue
+                    for event in events.children:
+                        if event != '\n':
+                            year, description = event.text.split(' – ', 1)
 
-                        date = datetime.date(int(year), target.month, target.day)
-                        Event.objects.create(date=date, description=description)  # pylint: disable=no-member
+                            if any(c.isalpha() for c in year):
+                                # TODO: Figure out how to handle BC years. DateField and BooleanField combo?
+                                logger.debug('Found a year containing letters: [%s]. Ignoring event.', year)
+                                continue
 
-                        count += 1
+                            date = datetime.date(int(year), target.month, target.day)
+                            Event.objects.create(date=date, description=description)  # pylint: disable=no-member
+
+                            count += 1
 
                 logger.info('Scraped %d events', count)
 
@@ -95,4 +108,4 @@ class Command(BaseCommand):
         uls = soup.find_all('ul')
         events = uls[1]
 
-        return events
+        return target, events
