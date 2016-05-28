@@ -126,6 +126,8 @@ LOGGING = {
     },
 }
 
+LEAP_YEAR = 2016
+
 # Heroku
 # TODO: Move these overrides to their own module.
 # Update database configuration with $DATABASE_URL.

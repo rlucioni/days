@@ -6,6 +6,7 @@ import logging
 import time
 
 from bs4 import BeautifulSoup
+from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 import requests
@@ -27,7 +28,7 @@ class Command(BaseCommand):
     help = 'ETL utility for retrieving historical events from Wikipedia.'
     url = 'https://en.wikipedia.org/wiki'
     # For targeting February 29.
-    leap_year = 2016
+    leap_year = settings.LEAP_YEAR
     succeeded = 0
     new = 0
     ignored = 0
