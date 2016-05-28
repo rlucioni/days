@@ -5,7 +5,7 @@ import datetime
 from django.conf import settings
 
 
-def all_days(self):
+def all_days():
     """Generator yielding all possible days of a year."""
     day_counts = [calendar.monthrange(settings.LEAP_YEAR, month)[1] for month in range(1, 13)]
 

@@ -63,7 +63,7 @@ class Command(BaseCommand):
                 ).date()
             ]
         else:
-            targets = utils.all_days()
+            targets = utils.all_days()  # pylint: disable=redefined-variable-type
 
         start = time.time()
         with ThreadPoolExecutor() as executor:
