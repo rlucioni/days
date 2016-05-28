@@ -3,6 +3,7 @@ import calendar
 from concurrent.futures import as_completed, ThreadPoolExecutor
 import datetime
 import logging
+import time
 
 from bs4 import BeautifulSoup
 from django.core.management.base import BaseCommand, CommandError
@@ -50,16 +51,21 @@ class Command(BaseCommand):
         target = options.get('target')
         commit = options.get('commit')
 
-        if target:
-            targets = [datetime.datetime.strptime(target, '%m-%d').date()]
-        else:
-            if not calendar.isleap(self.leap_year):
-                raise CommandError(
-                    '{year} is not a leap year. '
-                    'To guarantee that events for all possible days of a year are scraped, '
-                    'the "leap_year" class variable must be set to a leap year.'.format(year=self.leap_year)
-                )
+        if not calendar.isleap(self.leap_year):
+            raise CommandError(
+                '{year} is not a leap year. '
+                'To guarantee that events for all possible days of a year are scraped, '
+                'the "leap_year" class variable must be set to a leap year.'.format(year=self.leap_year)
+            )
 
+        if target:
+            targets = [
+                datetime.datetime.strptime(
+                    '{leap_year}-{target}'.format(leap_year=self.leap_year, target=target),
+                    '%Y-%m-%d'
+                ).date()
+            ]
+        else:
             day_counts = [calendar.monthrange(self.leap_year, month)[1] for month in range(1, 13)]
 
             targets = []
@@ -69,26 +75,32 @@ class Command(BaseCommand):
                         datetime.date(self.leap_year, month, day)
                     )
 
+        start = time.time()
         with ThreadPoolExecutor() as executor:
             futures = [executor.submit(self._scrape, t) for t in targets]
 
         try:
             with transaction.atomic():
-                count = 0
+                succeeded = 0
+                ignored = 0
                 for future in as_completed(futures):
-                    target, events = future.result()
+                    target, response = future.result()
+                    events = self._parse(target, response)
 
-                    logger.info('Processing events for %s', target.strftime('%B %-d'))
+                    logger.debug('Processing events for %s.', target.strftime('%B %-d'))
 
                     for event in events.children:
                         if event != '\n':
                             try:
                                 year, description = event.text.split(' – ', 1)
                             except ValueError:
+                                ignored += 1
                                 logger.warning('Found a malformed entry: [%s]. Ignoring event.', event.text)
+
                                 continue
 
                             if any(c.isalpha() for c in year):
+                                ignored += 1
                                 # TODO: Figure out how to handle BC years. DateField and BooleanField combo?
                                 logger.warning('Found a year containing letters: [%s]. Ignoring event.', year)
                                 continue
@@ -96,22 +108,27 @@ class Command(BaseCommand):
                             try:
                                 date = datetime.date(int(year), target.month, target.day)
                             except ValueError:
+                                ignored += 1
                                 logger.warning(
-                                    'Unable to create date object for year [%s], month [%s], day [%s]. Ignoring event.',
+                                    'Unable to create date object for '
+                                    'year [%s], month [%s], day [%s]. Ignoring event.',
                                     year,
                                     target.month,
                                     target.day
                                 )
+
                                 continue
 
                             Event.objects.create(date=date, description=description)  # pylint: disable=no-member
 
-                            count += 1
+                            succeeded += 1
 
-                logger.info('Scraped %d events', count)
+                end = time.time()
+                elapsed = end - start
+                logger.info('Scraped %d events in %.2f seconds. Ignored %d events.', succeeded, elapsed, ignored)
 
                 if commit:
-                    logger.info('Saved %d new events', count)
+                    logger.info('Saved %d new events. Ignored %d events.', succeeded, ignored)
                 else:
                     raise ForcedRollback(
                         'No data has been saved. To save data, pass the -c or --commit flags.'
@@ -126,10 +143,18 @@ class Command(BaseCommand):
         )
 
         response = requests.get(url)
+
+        return target, response
+
+    def _parse(self, target, response):
         soup = BeautifulSoup(response.text, 'html.parser')
-
         uls = soup.find_all('ul')
-        # TODO: February 29 has a slightly different structure. May need to grab third set of uls.
-        events = uls[1]
 
-        return target, events
+        # The page for February 29 has a slightly different structure.
+        is_leap_day = target.month == 2 and target.day == 29
+        if is_leap_day:
+            events = uls[3]
+        else:
+            events = uls[1]
+
+        return events
