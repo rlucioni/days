@@ -1,5 +1,4 @@
 """ETL utility for retrieving historical events from Wikipedia."""
-import calendar
 from concurrent.futures import as_completed, ThreadPoolExecutor
 import datetime
 import logging
@@ -7,7 +6,7 @@ import time
 
 from bs4 import BeautifulSoup
 from django.conf import settings
-from django.core.management.base import BaseCommand, CommandError
+from django.core.management.base import BaseCommand
 from django.db import transaction
 import requests
 
@@ -56,13 +55,6 @@ class Command(BaseCommand):
         target = options.get('target')
         commit = options.get('commit')
 
-        if not calendar.isleap(self.leap_year):
-            raise CommandError(
-                '{year} is not a leap year. '
-                'To guarantee that events for all possible days of a year can be retrieved, '
-                'the "leap_year" class variable must be set to a leap year.'.format(year=self.leap_year)
-            )
-
         if target:
             targets = [
                 datetime.datetime.strptime(
@@ -71,7 +63,7 @@ class Command(BaseCommand):
                 ).date()
             ]
         else:
-            targets = self.all_days()
+            targets = utils.all_days()
 
         start = time.time()
         with ThreadPoolExecutor() as executor:
@@ -104,19 +96,6 @@ class Command(BaseCommand):
                     )
         except ForcedRollback as e:
             logger.info(e)
-
-    def all_days(self):
-        """Construct a list containing all possible days of a year."""
-        day_counts = [calendar.monthrange(self.leap_year, month)[1] for month in range(1, 13)]
-
-        targets = []
-        for month, day_count in enumerate(day_counts, start=1):
-            for day in range(1, day_count + 1):
-                targets.append(
-                    datetime.date(self.leap_year, month, day)
-                )
-
-        return targets
 
     def scrape(self, target):
         """GET the given day's page from Wikipedia."""
