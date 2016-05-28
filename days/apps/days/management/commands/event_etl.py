@@ -96,7 +96,7 @@ class Command(BaseCommand):
                 )
 
                 if commit:
-                    logger.info('Saved %d new events. Ignored %d events.', self.new, self.ignored)
+                    logger.info('Saved %d new events.', self.new)
                 else:
                     raise ForcedRollback(
                         'No data has been saved. To save data, pass the -c or --commit flags.'
