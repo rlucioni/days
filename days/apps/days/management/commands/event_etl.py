@@ -8,7 +8,6 @@ from bs4 import BeautifulSoup
 from django.conf import settings
 from django.core.management.base import BaseCommand
 from django.db import transaction
-from fuzzywuzzy import fuzz
 import requests
 
 from days.apps.days import utils
@@ -167,8 +166,7 @@ class Command(BaseCommand):
                 continue
 
             try:
-                year = int(year)
-                date = datetime.date(year, target.month, target.day)
+                date = datetime.date(int(year), target.month, target.day)
             except ValueError:
                 self.ignored += 1
                 logger.warning(
@@ -181,31 +179,42 @@ class Command(BaseCommand):
 
                 continue
 
-            self.loaded += 1
+            old_events = self.update_or_create(date, description, old_events)
 
-            olds = old_events.filter(date__year=year)
-            for old in olds:
-                # Do we already have the event?
-                if old.description == description:
-                    # Prevent it from being deleted.
-                    old_events = old_events.exclude(id=old.id)
-                    break
-                # Do we have an event with a very similar description?
-                elif fuzz.token_set_ratio(old.description, description) >= 80:
-                    # Prefer what is likely the latest description of the event.
-                    old.description = description
-                    old.save()
-                    self.updated += 1
+        self.delete(old_events)
 
-                    # Prevent the updated event from being deleted.
-                    old_events = old_events.exclude(id=old.id)
-                    break
-            else:
-                # This appears to be a new event.
-                e = Event.objects.create(date=date, description=description)
-                # Prevent the new event from being deleted.
-                old_events = old_events.exclude(id=e.id)
-                self.new += 1
+    def update_or_create(self, date, description, old_events):
+        """Update an existing event's description or create a new one."""
+        olds = old_events.filter(date__year=date.year)
+        for old in olds:
+            # Do we already have the event?
+            if old.description == description:
+                # Prevent it from being deleted.
+                old_events = old_events.exclude(id=old.id)
+                break
+            # Do we have an event with a very similar description?
+            elif utils.are_similar(old.description, description):
+                # Prefer what is likely the latest description of the event.
+                old.description = description
+                old.save()
+                self.updated += 1
 
+                # Prevent the updated event from being deleted.
+                old_events = old_events.exclude(id=old.id)
+                break
+        else:
+            # This appears to be a new event.
+            event = Event.objects.create(date=date, description=description)
+            self.new += 1
+
+            # Prevent the new event from being deleted.
+            old_events = old_events.exclude(id=event.id)
+
+        self.loaded += 1
+
+        return old_events
+
+    def delete(self, old_events):
+        """Delete events no longer listed on Wikipedia."""
         self.deleted += len(old_events)
         old_events.delete()

@@ -3,6 +3,7 @@ import calendar
 import datetime
 
 from django.conf import settings
+from fuzzywuzzy import fuzz
 
 
 def all_days():
@@ -12,6 +13,11 @@ def all_days():
     for month, day_count in enumerate(day_counts, start=1):
         for day in range(1, day_count + 1):
             yield datetime.date(settings.LEAP_YEAR, month, day)
+
+
+def are_similar(first, second):
+    """Determine if the provided strings are similar."""
+    return fuzz.token_set_ratio(first, second) >= settings.SIMILARITY_PERCENTAGE
 
 
 def is_alphabetic(string):

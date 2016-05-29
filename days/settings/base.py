@@ -127,6 +127,7 @@ LOGGING = {
 }
 
 LEAP_YEAR = 2016
+SIMILARITY_PERCENTAGE = 80
 
 # Heroku
 # TODO: Move these overrides to their own module.
