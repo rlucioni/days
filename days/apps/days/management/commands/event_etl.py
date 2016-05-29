@@ -8,6 +8,7 @@ from bs4 import BeautifulSoup
 from django.conf import settings
 from django.core.management.base import BaseCommand
 from django.db import transaction
+from fuzzywuzzy import fuzz
 import requests
 
 from days.apps.days import utils
@@ -28,9 +29,11 @@ class Command(BaseCommand):
     url = 'https://en.wikipedia.org/wiki'
     # For targeting February 29.
     leap_year = settings.LEAP_YEAR
-    succeeded = 0
-    new = 0
+    loaded = 0
     ignored = 0
+    new = 0
+    updated = 0
+    deleted = 0
 
     def add_arguments(self, parser):
         parser.add_argument(
@@ -82,14 +85,25 @@ class Command(BaseCommand):
                 end = time.time()
                 elapsed = end - start
                 logger.info(
-                    'Retrieved %d events in %.2f seconds. Ignored %d events.',
-                    self.succeeded,
+                    'Loaded %d events in %.2f seconds. Ignored %d others. '
+                    '%d events are new. %d existing events will be updated. '
+                    '%d existing events will be deleted.',
+                    self.loaded,
                     elapsed,
-                    self.ignored
+                    self.ignored,
+                    self.new,
+                    self.updated,
+                    self.deleted,
                 )
 
                 if commit:
-                    logger.info('Saved %d new events.', self.new)
+                    logger.info(
+                        'Saved %d new events. %d existing events were updated. '
+                        '%d existing events were deleted.',
+                        self.new,
+                        self.updated,
+                        self.deleted,
+                    )
                 else:
                     raise ForcedRollback(
                         'No data has been saved. To save data, pass the -c or --commit flags.'
@@ -123,6 +137,8 @@ class Command(BaseCommand):
 
     def load(self, target, events):
         """Load parsed events into the database."""
+        old_events = Event.objects.filter(date__month=target.month, date__day=target.day)
+
         for event in events.children:
             if event == '\n':
                 continue
@@ -131,23 +147,32 @@ class Command(BaseCommand):
                 year, description = event.text.split(' – ', 1)
             except ValueError:
                 self.ignored += 1
-                logger.warning('Found a malformed entry: [%s]. Ignoring event.', event.text)
+                logger.warning(
+                    'Found a malformed entry: [%s]. Ignoring event for %s.',
+                    event.text,
+                    target.strftime('%B %-d')
+                )
 
                 continue
 
             if utils.is_alphabetic(year):
                 self.ignored += 1
                 # TODO: Figure out how to handle BC years. DateField and BooleanField combo?
-                logger.warning('Found a year containing letters: [%s]. Ignoring event.', year)
+                logger.warning(
+                    'Found a year containing letters: [%s]. Ignoring event for %s.',
+                    year,
+                    target.strftime('%B %-d')
+                )
 
                 continue
 
             try:
-                date = datetime.date(int(year), target.month, target.day)
+                year = int(year)
+                date = datetime.date(year, target.month, target.day)
             except ValueError:
                 self.ignored += 1
                 logger.warning(
-                    'Unable to create date object for '
+                    'Unable to create date object from '
                     'year [%s], month [%s], day [%s]. Ignoring event.',
                     year,
                     target.month,
@@ -156,7 +181,31 @@ class Command(BaseCommand):
 
                 continue
 
-            _, created = Event.objects.get_or_create(date=date, description=description)  # pylint: disable=no-member
+            self.loaded += 1
 
-            self.succeeded += 1
-            self.new += 1 if created else 0
+            olds = old_events.filter(date__year=year)
+            for old in olds:
+                # Do we already have the event?
+                if old.description == description:
+                    # Prevent it from being deleted.
+                    old_events = old_events.exclude(id=old.id)
+                    break
+                # Do we have an event with a very similar description?
+                elif fuzz.token_set_ratio(old.description, description) >= 80:
+                    # Prefer what is likely the latest description of the event.
+                    old.description = description
+                    old.save()
+                    self.updated += 1
+
+                    # Prevent the updated event from being deleted.
+                    old_events = old_events.exclude(id=old.id)
+                    break
+            else:
+                # This appears to be a new event.
+                e = Event.objects.create(date=date, description=description)
+                # Prevent the new event from being deleted.
+                old_events = old_events.exclude(id=e.id)
+                self.new += 1
+
+        self.deleted += len(old_events)
+        old_events.delete()

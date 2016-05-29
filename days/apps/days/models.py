@@ -20,4 +20,4 @@ class Event(models.Model):
         ordering = ['-modified']
 
     def __str__(self):
-        return self.date.strftime('%b. %-d %Y')  # pylint: disable=no-member
+        return self.date.strftime('%b. %-d %Y')
