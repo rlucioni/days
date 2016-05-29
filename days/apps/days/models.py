@@ -13,8 +13,11 @@ class Event(models.Model):
         help_text='A description of the event.'
     )
 
+    created = models.DateTimeField(auto_now_add=True)
+    modified = models.DateTimeField(auto_now=True)
+
     class Meta(object):  # pylint: disable=missing-docstring
-        ordering = ['date']
+        ordering = ['-modified']
 
     def __str__(self):
         return self.date.strftime('%b. %-d %Y')  # pylint: disable=no-member
