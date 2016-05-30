@@ -42,3 +42,8 @@ $ make serve
 ```
 
 Access the app in your browser at `http://127.0.0.1:8000/`.
+
+
+### Heroku
+
+Export `DJANGO_SETTINGS_MODULE` and `DAYS_SECRET_KEY`.

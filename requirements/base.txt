@@ -1,0 +1,8 @@
+beautifulsoup4==4.4.1
+Django==1.9.6
+fuzzywuzzy==0.10.0
+pep8==1.7.0
+pylint==1.5.5
+python-Levenshtein==0.12.0
+requests==2.10.0
+whitenoise==3.1
