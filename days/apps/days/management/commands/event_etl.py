@@ -11,15 +11,11 @@ from django.db import transaction
 import requests
 
 from days.apps.days import utils
+from days.apps.days.exceptions import ForcedRollback
 from days.apps.days.models import Event
 
 
 logger = logging.getLogger(__name__)
-
-
-class ForcedRollback(Exception):
-    """Raised when intentionally rolling back a transaction."""
-    pass
 
 
 class Command(BaseCommand):
