@@ -126,7 +126,14 @@ LOGGING = {
     },
 }
 
+# Events to include in emails to subscribers.
+EVENT_COUNT = 3
+
+# A leap year, used during event ETL to facilitate targeting February 29.
 LEAP_YEAR = 2016
+
+# Event descriptions must be at least this similar in order to update an
+# existing description instead of saving a new event.
 SIMILARITY_PERCENTAGE = 80
 
 # Heroku

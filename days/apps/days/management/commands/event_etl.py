@@ -1,4 +1,4 @@
-"""ETL utility for retrieving historical events from Wikipedia."""
+"""Retrieve historical events from Wikipedia."""
 from concurrent.futures import as_completed, ThreadPoolExecutor
 import datetime
 import logging
@@ -19,8 +19,8 @@ logger = logging.getLogger(__name__)
 
 
 class Command(BaseCommand):
-    """ETL utility for retrieving historical events from Wikipedia."""
-    help = 'ETL utility for retrieving historical events from Wikipedia.'
+    """Retrieve historical events from Wikipedia."""
+    help = 'Retrieve historical events from Wikipedia.'
     url = 'https://en.wikipedia.org/wiki'
     # For targeting February 29.
     leap_year = settings.LEAP_YEAR
