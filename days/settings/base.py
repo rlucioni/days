@@ -123,6 +123,10 @@ LOGGING = {
     },
 }
 
+# Day of the week on which to run the load_events management command, where Monday is 0 and Sunday is 6.
+# Allows Heroku's Scheduler to be used to run the command weekly.
+LOAD_DAY = 6
+
 # Number of days for which to retrieve and store events.
 DAY_COUNT = 30
 

@@ -1,10 +1,12 @@
 """Retrieve historical events from Wikipedia."""
+import calendar
 from concurrent.futures import as_completed, ThreadPoolExecutor
 import datetime
 import logging
 import time
 
 from bs4 import BeautifulSoup
+from django.conf import settings
 from django.core.management.base import BaseCommand
 from django.db import transaction
 import requests
@@ -20,12 +22,21 @@ logger = logging.getLogger(__name__)
 class Command(BaseCommand):
     """Retrieve historical events from Wikipedia."""
     help = 'Retrieve historical events from Wikipedia.'
+    load_day = calendar.day_name[settings.LOAD_DAY]
     url = 'https://en.wikipedia.org/wiki'
     ignored = 0
     new = 0
     deleted = 0
 
     def add_arguments(self, parser):
+        parser.add_argument(
+            '-f', '--force',
+            action='store_true',
+            dest='force',
+            default=False,
+            help='Force execution. By default, the command only runs on {}.'.format(self.load_day)
+        )
+
         parser.add_argument(
             '-c', '--commit',
             action='store_true',
@@ -35,13 +46,15 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args, **options):
+        force = options.get('force')
         commit = options.get('commit')
 
-        days = utils.date_range()
+        if not self.is_runnable(force):
+            return
 
         start = time.time()
         with ThreadPoolExecutor() as executor:
-            futures = [executor.submit(self.scrape, d) for d in days]
+            futures = [executor.submit(self.scrape, day) for day in utils.date_range()]
 
         try:
             with transaction.atomic():
@@ -78,6 +91,22 @@ class Command(BaseCommand):
                     )
         except ForcedRollback as e:
             logger.info(e)
+
+    def is_runnable(self, force):
+        """Determine if the command should be run."""
+        if force:
+            return True
+        else:
+            weekday = datetime.datetime.now().weekday()
+            if weekday == settings.LOAD_DAY:
+                return True
+            else:
+                logger.info(
+                    'Today is %s. This command only runs on %s. Exiting.',
+                    calendar.day_name[weekday],
+                    self.load_day,
+                )
+                return False
 
     def scrape(self, day):
         """GET the given day's page from Wikipedia."""
