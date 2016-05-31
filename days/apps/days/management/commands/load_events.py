@@ -5,7 +5,6 @@ import logging
 import time
 
 from bs4 import BeautifulSoup
-from django.conf import settings
 from django.core.management.base import BaseCommand
 from django.db import transaction
 import requests
@@ -22,25 +21,11 @@ class Command(BaseCommand):
     """Retrieve historical events from Wikipedia."""
     help = 'Retrieve historical events from Wikipedia.'
     url = 'https://en.wikipedia.org/wiki'
-    # For targeting February 29.
-    leap_year = settings.LEAP_YEAR
-    loaded = 0
     ignored = 0
     new = 0
-    updated = 0
     deleted = 0
 
     def add_arguments(self, parser):
-        parser.add_argument(
-            '-t', '--target',
-            action='store',
-            dest='target',
-            default=None,
-            help=(
-                'Specific month and day for which to retrieve events, specified as a %%m-%%d formatted string.'
-            )
-        )
-
         parser.add_argument(
             '-c', '--commit',
             action='store_true',
@@ -50,53 +35,41 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args, **options):
-        target = options.get('target')
         commit = options.get('commit')
 
-        if target:
-            targets = [
-                datetime.datetime.strptime(
-                    '{leap_year}-{target}'.format(leap_year=self.leap_year, target=target),
-                    '%Y-%m-%d'
-                ).date()
-            ]
-        else:
-            targets = utils.all_days()  # pylint: disable=redefined-variable-type
+        days = utils.date_range()
 
         start = time.time()
         with ThreadPoolExecutor() as executor:
-            futures = [executor.submit(self.scrape, t) for t in targets]
+            futures = [executor.submit(self.scrape, d) for d in days]
 
         try:
             with transaction.atomic():
+                self.delete()
+
                 for future in as_completed(futures):
-                    target, response = future.result()
+                    day, response = future.result()
 
-                    logger.debug('Processing events for %s.', target.strftime('%B %-d'))
+                    logger.debug('Processing events for %s.', day.strftime('%B %-d'))
 
-                    events = self.parse(target, response)
-                    self.load(target, events)
+                    events = self.parse(day, response)
+                    self.load(day, events)
 
                 end = time.time()
                 elapsed = end - start
                 logger.info(
                     'Loaded %d events in %.2f seconds. Ignored %d others. '
-                    '%d events are new. %d existing events will be updated. '
                     '%d existing events will be deleted.',
-                    self.loaded,
+                    self.new,
                     elapsed,
                     self.ignored,
-                    self.new,
-                    self.updated,
                     self.deleted,
                 )
 
                 if commit:
                     logger.info(
-                        'Saved %d new events. %d existing events were updated. '
-                        '%d existing events were deleted.',
+                        'Saved %d new events. Deleted %d existing events.',
                         self.new,
-                        self.updated,
                         self.deleted,
                     )
                 else:
@@ -106,34 +79,39 @@ class Command(BaseCommand):
         except ForcedRollback as e:
             logger.info(e)
 
-    def scrape(self, target):
+    def scrape(self, day):
         """GET the given day's page from Wikipedia."""
         url = '{base_url}/{month_day}'.format(
             base_url=self.url,
-            month_day=target.strftime('%B_%-d')
+            month_day=day.strftime('%B_%-d')
         )
 
         response = requests.get(url)
 
-        return target, response
+        return day, response
 
-    def parse(self, target, response):  # pylint: disable=no-self-use
+    def delete(self):
+        """Delete existing events."""
+        existing = Event.objects.all()
+        self.deleted = len(existing)
+
+        existing.delete()
+
+    def parse(self, day, response):  # pylint: disable=no-self-use
         """Extract the unordered list of events."""
         soup = BeautifulSoup(response.text, 'html.parser')
         uls = soup.find_all('ul')
 
         # The page for February 29 has a slightly different structure.
-        if utils.is_leap_day(target):
+        if utils.is_leap_day(day):
             events = uls[3]
         else:
             events = uls[1]
 
         return events
 
-    def load(self, target, events):
+    def load(self, day, events):
         """Load parsed events into the database."""
-        old_events = Event.objects.filter(date__month=target.month, date__day=target.day)
-
         for event in events.children:
             if event == '\n':
                 continue
@@ -145,7 +123,7 @@ class Command(BaseCommand):
                 logger.warning(
                     'Found a malformed entry: [%s]. Ignoring event for %s.',
                     event.text,
-                    target.strftime('%B %-d')
+                    day.strftime('%B %-d')
                 )
 
                 continue
@@ -156,61 +134,24 @@ class Command(BaseCommand):
                 logger.warning(
                     'Found a year containing letters: [%s]. Ignoring event for %s.',
                     year,
-                    target.strftime('%B %-d')
+                    day.strftime('%B %-d')
                 )
 
                 continue
 
             try:
-                date = datetime.date(int(year), target.month, target.day)
+                date = datetime.date(int(year), day.month, day.day)
             except ValueError:
                 self.ignored += 1
                 logger.warning(
                     'Unable to create date object from '
                     'year [%s], month [%s], day [%s]. Ignoring event.',
                     year,
-                    target.month,
-                    target.day
+                    day.month,
+                    day.day
                 )
 
                 continue
 
-            old_events = self.update_or_create(date, description, old_events)
-
-        self.delete(old_events)
-
-    def update_or_create(self, date, description, old_events):
-        """Update an existing event's description or create a new one."""
-        olds = old_events.filter(date__year=date.year)
-        for old in olds:
-            # Do we already have the event?
-            if old.description == description:
-                # Prevent it from being deleted.
-                old_events = old_events.exclude(id=old.id)
-                break
-            # Do we have an event with a very similar description?
-            elif utils.are_similar(old.description, description):
-                # Prefer what is likely the latest description of the event.
-                old.description = description
-                old.save()
-                self.updated += 1
-
-                # Prevent the updated event from being deleted.
-                old_events = old_events.exclude(id=old.id)
-                break
-        else:
-            # This appears to be a new event.
-            event = Event.objects.create(date=date, description=description)
+            Event.objects.create(date=date, description=description)
             self.new += 1
-
-            # Prevent the new event from being deleted.
-            old_events = old_events.exclude(id=event.id)
-
-        self.loaded += 1
-
-        return old_events
-
-    def delete(self, old_events):
-        """Delete events no longer listed on Wikipedia."""
-        self.deleted += len(old_events)
-        old_events.delete()

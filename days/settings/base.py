@@ -123,12 +123,8 @@ LOGGING = {
     },
 }
 
-# Events to include in emails to subscribers.
+# Number of days for which to retrieve and store events.
+DAY_COUNT = 30
+
+# Number of events to include in daily emails to subscribers.
 EVENT_COUNT = 1
-
-# A leap year, used during event ETL to facilitate targeting February 29.
-LEAP_YEAR = 2016
-
-# Event descriptions must be at least this similar in order to update an
-# existing description instead of saving a new event.
-SIMILARITY_PERCENTAGE = 80
