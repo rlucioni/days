@@ -71,3 +71,8 @@ Create a superuser::
 Verify deployment by visiting the admin::
 
     $ heroku open /admin
+
+Use the Heroku Scheduler to schedule event loading and emailing::
+
+    $ heroku addons:create scheduler:standard
+    $ heroku addons:open scheduler
