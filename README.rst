@@ -46,10 +46,11 @@ If you haven't already, install the `Heroku Toolbelt <https://devcenter.heroku.c
 
     $ heroku create
 
-Export ``DJANGO_SETTINGS_MODULE`` and ``DAYS_SECRET_KEY``::
+Export environment variables::
 
     $ heroku config:set DJANGO_SETTINGS_MODULE=days.settings.heroku
     $ heroku config:set DAYS_SECRET_KEY=<secret>
+    $ heroku config:set WEB_CONCURRENCY=2
 
 Deploy the code::
 
