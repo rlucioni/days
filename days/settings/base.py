@@ -124,7 +124,7 @@ LOGGING = {
 }
 
 # Events to include in emails to subscribers.
-EVENT_COUNT = 3
+EVENT_COUNT = 1
 
 # A leap year, used during event ETL to facilitate targeting February 29.
 LEAP_YEAR = 2016

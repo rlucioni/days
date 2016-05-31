@@ -44,9 +44,9 @@ class Command(BaseCommand):
         except ValueError:
             events = candidates
 
-        subject = 'On This Day'
+        subject = '{date} - On This Day'.format(date=today.strftime('%B %-d'))
 
-        lines = ['{year} - {description}'.format(year=e.date.year, description=e.description) for e in events]
+        lines = ['{year}: {description}'.format(year=e.date.year, description=e.description) for e in events]
         message = '\n'.join(lines)
 
         from_email = 'from@example.com'
