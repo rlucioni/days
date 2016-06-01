@@ -72,7 +72,11 @@ Verify deployment by visiting the admin::
 
     $ heroku open /admin
 
-Use the Heroku Scheduler to schedule event loading and emailing::
+Use the Heroku `Scheduler add-on <https://devcenter.heroku.com/articles/scheduler>`_ to schedule event loading and emailing::
 
     $ heroku addons:create scheduler:standard
     $ heroku addons:open scheduler
+
+Provision Heroku's `SendGrid add-on <https://devcenter.heroku.com/articles/sendgrid>`_::
+
+    $ heroku addons:create sendgrid:starter

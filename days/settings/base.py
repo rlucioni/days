@@ -132,3 +132,10 @@ DAY_COUNT = 30
 
 # Number of events to include in daily emails to subscribers.
 EVENT_COUNT = 1
+
+# SendGrid credentials
+SENDGRID_USERNAME = os.environ.get('SENDGRID_USERNAME', 'set-me-please')
+SENDGRID_PASSWORD = os.environ.get('SENDGRID_PASSWORD', 'set-me-please')
+
+# Address to send emails from
+FROM_EMAIL = 'On This Day <historian@onthisday.com>'

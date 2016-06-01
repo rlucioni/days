@@ -3,4 +3,5 @@ Django==1.9.6
 pep8==1.7.0
 pylint==1.5.5
 requests==2.10.0
+sendgrid==2.2.1
 whitenoise==3.1
